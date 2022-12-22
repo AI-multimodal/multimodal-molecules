@@ -1,3 +1,4 @@
+from copy import deepcopy
 from functools import cached_property, cache
 import json
 from pathlib import Path
@@ -182,7 +183,7 @@ class Results(MSONable):
         input_data_directory="data/221205",
         output_data_directory=None,
         n_jobs=2,
-        testing=False,
+        debug=-1,
         compute_feature_importance=True,
     ):
         """Runs all experiments corresponding to the functional groups
@@ -200,8 +201,8 @@ class Results(MSONable):
         n_jobs : int, optional
             The number of jobs/parallel processes to feed to the RandomForest
             model and the feature impotance ranking functions.
-        testing : bool, optional
-            If True, only iterates through the for loop one time.
+        debug : bool, optional
+            If >0, iterates only through that many calculations.
         compute_feature_importance : bool, optional
             Computes the feature importances using the permutation method.
             Note that this is quite expensive. Likely to take aroudn 2 minutes
@@ -231,12 +232,14 @@ class Results(MSONable):
             ratio = targets_on / total_targets
             if not (self._min_fg_occurrence < ratio < self._max_fg_occurrence):
                 print(
-                    f"({ii+1}/{L}) {key} has occurence of {ratio:.04f} "
+                    f"[{(ii+1):03}/{L:03}] {key} occurence {ratio:.04f} "
                     "- continuing"
                 )
                 continue
 
-            print(f"({ii+1}/{L}) running {base_name} + {key} ... ", end="")
+            print(
+                f"[{(ii+1):03}/{L:03}] {key} occurence {ratio:.04f} ", end=""
+            )
 
             with Timer() as timer:
 
@@ -254,11 +257,13 @@ class Results(MSONable):
                 if output_data_directory is not None:
                     models[key] = model
 
-            print(f"- training: {int(timer.dt)} s ... ", end="")
+            print(f"- training: {timer.dt:.01f} s ... ", end="")
 
             with Timer() as timer:
+
                 # Run the model report and save the it as a json file
-                report = Report()
+                # Need the deepcopy here, still not entirely sure why
+                report = deepcopy(Report())
                 report.populate_performance(
                     model, x_train, y_train, x_test, y_test
                 )
@@ -267,13 +272,14 @@ class Results(MSONable):
                         model, x_test, y_test, n_jobs
                     )
 
-            print(f"- report/save: {int(timer.dt)} s")
+            print(f"- report/save: {timer.dt:.01f} s")
 
             self._reports[key] = report
 
-            if testing and ii == 1:
-                warn("In testing mode, only computing two models!")
-                break
+            if debug > 0:
+                if ii >= debug:
+                    warn("In testing mode- ending early!")
+                    break
 
         if output_data_directory is not None:
             Path(output_data_directory).mkdir(exist_ok=True, parents=True)

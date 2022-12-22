@@ -63,7 +63,7 @@ def get_dataset(xanes_path, index_path, conditions="C-XANES"):
     # e.g. X-XANES => X but X does NOT => X-XANES
     cc_conditions = [xx.split("-")[0] for xx in conditions if "XANES" in xx]
     conditions = conditions + cc_conditions
-    print(f"Applying conditions: {conditions}")
+    print(f"Getting data, applying conditions: {conditions}")
 
     xanes = get_pickle_data_and_cache(xanes_path)
     grids = xanes["grids"]
