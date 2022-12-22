@@ -272,7 +272,7 @@ class Results(MSONable):
                         model, x_test, y_test, n_jobs
                     )
 
-            print(f"- report/save: {timer.dt:.01f} s")
+            print(f"- report/save: {timer.dt:.01f} s", flush=True)
 
             self._reports[key] = report
 
