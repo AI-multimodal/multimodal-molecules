@@ -4,7 +4,6 @@ import json
 import numpy as np
 import pandas as pd
 import pickle
-from sklearn.model_selection import train_test_split
 
 
 def save_json(d, path):
@@ -103,14 +102,3 @@ def get_dataset(xanes_path, index_path, conditions="C-XANES"):
     final_data["index"] = index
 
     return final_data
-
-
-def get_reproducible_train_test_split(
-    xanes_data, binary_targets, test_size=0.9, random_state=42
-):
-    return train_test_split(
-        xanes_data,
-        binary_targets,
-        test_size=test_size,
-        random_state=random_state,
-    )
