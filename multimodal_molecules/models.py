@@ -82,7 +82,7 @@ class Results(MSONable):
         with open(path, "r") as f:
             d = json.loads(json.load(f))
         klass = cls.from_dict(d)
-        klass._data_loaded_from = str(path.parent)
+        klass._data_loaded_from = str(Path(path).parent)
         return klass
 
     @property
@@ -109,7 +109,7 @@ class Results(MSONable):
 
         d = dict()
         for fname in Path(self._data_loaded_from).glob("*.pkl"):
-            key = fname.split(".pkl")[0].split("_")[1]
+            key = str(fname).split(".pkl")[0].split("_")[1]
             d[key] = pickle.load(open(fname))
         return d
 
@@ -224,7 +224,7 @@ class Results(MSONable):
                 print(f"{key} has occurence of {ratio:.02f} - continuing")
                 continue
 
-            print(f"Running {base_name} + {key}...")
+            print(f"({ii+1}/{L}) running {base_name} + {key}...")
 
             with Timer() as timer:
 
@@ -242,7 +242,7 @@ class Results(MSONable):
                 if output_data_directory is not None:
                     models[key] = model
 
-            print(f"- ({ii+1}/{L}) training: {int(timer.dt)} s")
+            print(f"- training: {int(timer.dt)} s")
 
             with Timer() as timer:
                 # Run the model report and save the it as a json file
@@ -254,7 +254,7 @@ class Results(MSONable):
                     model, x_test, y_test, n_jobs
                 )
 
-            print(f"- ({ii+1}/{L}) report/save: {int(timer.dt)} s")
+            print(f"- report/save: {int(timer.dt)} s")
 
             self._reports[key] = report
 
