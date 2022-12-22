@@ -133,7 +133,7 @@ def run_experiments(
                 xanes_data,
                 binary_targets,
                 test_size=test_size,
-                random_state=RandomForestClassifier
+                random_state=random_state,
             )
 
             # Train the model
@@ -176,7 +176,7 @@ def load_results(
     populate_models=False,
 ):
     """Summary
-    
+
     Parameters
     ----------
     xanes_path : TYPE
