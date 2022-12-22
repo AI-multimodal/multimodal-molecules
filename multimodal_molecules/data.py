@@ -4,6 +4,7 @@ import json
 import numpy as np
 import pandas as pd
 import pickle
+from sklearn.model_selection import train_test_split
 
 
 def save_json(d, path):
@@ -47,9 +48,10 @@ def get_dataset(xanes_path, index_path, conditions="C-XANES"):
         with SMILES strings as keys and arbitrary data as value, but this data
         must contain "X-XANES" keys, where X == C, N, O. Note that the pickle
         file itself must have the key "data", which will be what is accessed.
-    elements : list, optional
-        A list of str containing a subset of "C", "N", "O". Only data in which
-        spectra exist for _all_ provided elements will be kept in the dataset.
+    index_path : TYPE
+        Description
+    conditions : str, optional
+        Description
 
     Returns
     -------
@@ -101,3 +103,14 @@ def get_dataset(xanes_path, index_path, conditions="C-XANES"):
     final_data["index"] = index
 
     return final_data
+
+
+def get_reproducible_train_test_split(
+    xanes_data, binary_targets, test_size=0.9, random_state=42
+):
+    return train_test_split(
+        xanes_data,
+        binary_targets,
+        test_size=test_size,
+        random_state=random_state,
+    )
