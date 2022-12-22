@@ -107,6 +107,10 @@ class Results(MSONable):
             )
             return None
 
+        base_name = self._conditions.replace(",", "_")
+        path = Path(self._data_loaded_from) / f"{base_name}_models.pkl"
+        return pickle.load(open(path, "rb"))
+
         d = dict()
         for fname in Path(self._data_loaded_from).glob("*.pkl"):
             key = str(fname).split(".pkl")[0].split("_")[1]
@@ -179,6 +183,7 @@ class Results(MSONable):
         output_data_directory=None,
         n_jobs=2,
         testing=False,
+        compute_feature_importance=True,
     ):
         """Runs all experiments corresponding to the functional groups
         and the initially provided conditions.
@@ -197,6 +202,10 @@ class Results(MSONable):
             model and the feature impotance ranking functions.
         testing : bool, optional
             If True, only iterates through the for loop one time.
+        compute_feature_importance : bool, optional
+            Computes the feature importances using the permutation method.
+            Note that this is quite expensive. Likely to take aroudn 2 minutes
+            or so per model even at full parallelization.
         """
 
         data = self.get_data(input_data_directory)
@@ -221,10 +230,13 @@ class Results(MSONable):
             targets_on = binary_targets.sum()
             ratio = targets_on / total_targets
             if not (self._min_fg_occurrence < ratio < self._max_fg_occurrence):
-                print(f"{key} has occurence of {ratio:.02f} - continuing")
+                print(
+                    f"({ii+1}/{L}) {key} has occurence of {ratio:.04f} "
+                    "- continuing"
+                )
                 continue
 
-            print(f"({ii+1}/{L}) running {base_name} + {key}...")
+            print(f"({ii+1}/{L}) running {base_name} + {key} ... ", end="")
 
             with Timer() as timer:
 
@@ -242,7 +254,7 @@ class Results(MSONable):
                 if output_data_directory is not None:
                     models[key] = model
 
-            print(f"- training: {int(timer.dt)} s")
+            print(f"- training: {int(timer.dt)} s ... ", end="")
 
             with Timer() as timer:
                 # Run the model report and save the it as a json file
@@ -250,16 +262,17 @@ class Results(MSONable):
                 report.populate_performance(
                     model, x_train, y_train, x_test, y_test
                 )
-                report.populate_feature_importance(
-                    model, x_test, y_test, n_jobs
-                )
+                if compute_feature_importance:
+                    report.populate_feature_importance(
+                        model, x_test, y_test, n_jobs
+                    )
 
             print(f"- report/save: {int(timer.dt)} s")
 
             self._reports[key] = report
 
-            if testing:
-                warn("In testing mode, only computing one model!")
+            if testing and ii == 1:
+                warn("In testing mode, only computing two models!")
                 break
 
         if output_data_directory is not None:
