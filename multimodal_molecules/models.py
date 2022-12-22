@@ -110,7 +110,7 @@ class Results(MSONable):
         d = dict()
         for fname in Path(self._data_loaded_from).glob("*.pkl"):
             key = str(fname).split(".pkl")[0].split("_")[1]
-            d[key] = pickle.load(open(fname))
+            d[key] = pickle.load(open(fname, "rb"))
         return d
 
     @cached_property
