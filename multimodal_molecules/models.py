@@ -110,6 +110,8 @@ def run_experiments(
         Description
     """
 
+    Path(root).mkdir(exist_ok=True, parents=True)
+
     # "Sort" the conditions
     conditions = ",".join(sorted(conditions.split(",")))
 
