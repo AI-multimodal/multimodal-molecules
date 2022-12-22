@@ -156,7 +156,7 @@ def run_experiments(
 
             # Train the model
             model = RandomForestClassifier(
-                n_jobs=n_jobs, random_state=random_state, verbose=True
+                n_jobs=n_jobs, random_state=random_state
             )
             model.fit(x_train, y_train)
 
