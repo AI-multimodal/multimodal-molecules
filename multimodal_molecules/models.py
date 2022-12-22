@@ -140,6 +140,7 @@ def run_experiments(
             model = RandomForestClassifier(
                 n_jobs=n_jobs, random_state=random_state, verbose=True
             )
+            model.fit(x_train, x_test, n_jobs=n_jobs)
 
             # Run the model report and save the it as a json file
             report = Report()
