@@ -41,13 +41,17 @@ class Report(MSONable):
     def __init__(self, metrics=dict()):
         self._metrics = metrics
 
-    # def populate_predictions(self, model, )
-
     def populate_performance(self, model, x_train, y_train, x_test, y_test):
         y_test_pred = model.predict(x_test)
-        self._metrics["accuracy"] = accuracy_score(y_test, y_test_pred)
         y_train_pred = model.predict(x_train)
-        self._metrics["balanced_accuracy"] = balanced_accuracy_score(
+
+        self._metrics["test_accuracy"] = accuracy_score(y_test, y_test_pred)
+        self._metrics["train_accuracy"] = accuracy_score(y_train, y_train_pred)
+
+        self._metrics["test_balanced_accuracy"] = balanced_accuracy_score(
+            y_test, y_test_pred
+        )
+        self._metrics["train_balanced_accuracy"] = balanced_accuracy_score(
             y_train, y_train_pred
         )
 
@@ -55,9 +59,11 @@ class Report(MSONable):
         self._metrics["feature_importance"] = np.array(
             [tree.feature_importances_ for tree in model.estimators_]
         )
-        self._metrics[
-            "permutation_feature_importance"
-        ] = permutation_importance(model, x_test, y_test, n_jobs=n_jobs)
+        p_importance = permutation_importance(
+            model, x_test, y_test, n_jobs=n_jobs
+        )
+        p_importance.pop("importances")
+        self._metrics["permutation_feature_importance"] = p_importance
 
 
 def run_experiments(
@@ -139,6 +145,8 @@ def run_experiments(
         # to be predicted
         name = f"{base_name}_{key}"
 
+        print(f"Running {name}...")
+
         with Timer() as timer:
 
             # Get the test/train split
@@ -160,6 +168,9 @@ def run_experiments(
             )
             model.fit(x_train, y_train)
 
+        print(f"- ({ii+1}/{L}) training: {int(timer.dt)} s")
+
+        with Timer() as timer:
             # Run the model report and save the it as a json file
             report = Report()
             report.populate_performance(
@@ -179,8 +190,7 @@ def run_experiments(
                 protocol=pickle.HIGHEST_PROTOCOL,
             )
 
-        # Print some information about the procedure
-        print(f"Done ({ii+1}/{L}) {key} in {int(timer.dt)} s")
+        print(f"- ({ii+1}/{L}) report/save: {int(timer.dt)} s")
 
         if testing:
             warn("In testing mode, only computing one model!")
