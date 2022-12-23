@@ -1,4 +1,5 @@
 from copy import deepcopy
+from itertools import combinations
 from functools import cached_property, cache
 import json
 from pathlib import Path
@@ -28,8 +29,12 @@ class Timer:
         return self._time
 
 
-def rf_classifier_predict(rf, x):
-    return np.array([tree.predict(x) for tree in rf.estimators_])
+def get_all_combinations(n):
+    L = [ii for ii in range(n)]
+    combos = []
+    for nn in range(len(L)):
+        combos.extend(list(combinations(L, nn + 1)))
+    return combos
 
 
 class Report(MSONable):
@@ -138,7 +143,8 @@ class Results(MSONable):
         return get_dataset(xanes_path, index_path, self._conditions)
 
     def _get_xanes_data(self, data):
-        """Select the keys that contain the substring "XANES"."""
+        """Select the keys that contain the substring "XANES". Also returns
+        the lenght of the keys available."""
 
         xanes_keys_avail = [
             cc for cc in self._conditions.split(",") if "XANES" in cc
@@ -148,7 +154,7 @@ class Results(MSONable):
         return np.concatenate(
             [data[key][:, o1:o2] for key in xanes_keys_avail],
             axis=1,
-        )
+        ), len(xanes_keys_avail)
 
     def __init__(
         self,
@@ -210,76 +216,98 @@ class Results(MSONable):
         """
 
         data = self.get_data(input_data_directory)
-        xanes_data = self._get_xanes_data(data)
+        xanes_data, n_xanes_types = self._get_xanes_data(data)
         self._data_size = xanes_data.shape[0]
+        ssl = xanes_data.shape[1] // n_xanes_types  # Single spectrum length
+        train_indexes, test_indexes = self.train_test_indexes
 
         base_name = self._conditions.replace(",", "_")
 
         print(f"Total XANES data has shape {xanes_data.shape}")
         L = len(data["FG"])
-        print(f"Total of {L} functional groups")
+        print(f"Total of {L} functional groups\n")
 
-        train_indexes, test_indexes = self.train_test_indexes
+        xanes_index_combinations = get_all_combinations(n_xanes_types)
 
+        conditions_list = base_name.split("_")
         models = dict()
-
-        for ii, (key, binary_targets) in enumerate(data["FG"].items()):
-
-            # Check that the occurence of the functional groups falls into the
-            # specified sweet spot
-            total_targets = len(binary_targets)
-            targets_on = binary_targets.sum()
-            ratio = targets_on / total_targets
-            if not (self._min_fg_occurrence < ratio < self._max_fg_occurrence):
-                print(
-                    f"[{(ii+1):03}/{L:03}] {key} occurence {ratio:.04f} "
-                    "- continuing"
-                )
-                continue
-
+        for combo in xanes_index_combinations:
+            current_conditions_name = "_".join(
+                [conditions_list[jj] for jj in combo]
+            )
+            current_xanes_data = np.concatenate(
+                [xanes_data[:, ssl * ii:ssl * (ii + 1)] for ii in combo],
+                axis=1,
+            )
             print(
-                f"[{(ii+1):03}/{L:03}] {key} occurence {ratio:.04f} ", end=""
+                f"Current XANES combo={combo} name={current_conditions_name} "
+                f"shape={current_xanes_data.shape}"
             )
 
-            with Timer() as timer:
+            for ii, (fg_name, binary_targets) in enumerate(data["FG"].items()):
 
-                x_train = xanes_data[train_indexes, :]
-                x_test = xanes_data[test_indexes, :]
-                y_train = binary_targets[train_indexes]
-                y_test = binary_targets[test_indexes]
+                experiment_name = f"{current_conditions_name}-{fg_name}"
 
-                # Train the model
-                model = RandomForestClassifier(
-                    n_jobs=n_jobs, random_state=self._random_state
-                )
-                model.fit(x_train, y_train)
-
-                if output_data_directory is not None:
-                    models[key] = model
-
-            print(f"- training: {timer.dt:.01f} s ... ", end="")
-
-            with Timer() as timer:
-
-                # Run the model report and save the it as a json file
-                # Need the deepcopy here, still not entirely sure why
-                report = deepcopy(Report())
-                report.populate_performance(
-                    model, x_train, y_train, x_test, y_test
-                )
-                if compute_feature_importance:
-                    report.populate_feature_importance(
-                        model, x_test, y_test, n_jobs
+                # Check that the occurence of the functional groups falls into
+                # the specified sweet spot
+                total_targets = len(binary_targets)
+                targets_on = binary_targets.sum()
+                ratio = targets_on / total_targets
+                if not (
+                    self._min_fg_occurrence < ratio < self._max_fg_occurrence
+                ):
+                    print(
+                        f"\t[{(ii+1):03}/{L:03}] {experiment_name} occurence "
+                        f"{ratio:.04f} - continuing",
+                        flush=True,
                     )
+                    continue
 
-            print(f"- report/save: {timer.dt:.01f} s")
+                print(
+                    f"\t[{(ii+1):03}/{L:03}] {experiment_name} "
+                    f"occurence {ratio:.04f} ",
+                    end="",
+                )
 
-            self._reports[key] = report
+                with Timer() as timer:
 
-            if debug > 0:
-                if ii >= debug:
-                    warn("In testing mode- ending early!")
-                    break
+                    x_train = current_xanes_data[train_indexes, :]
+                    x_test = current_xanes_data[test_indexes, :]
+                    y_train = binary_targets[train_indexes]
+                    y_test = binary_targets[test_indexes]
+
+                    # Train the model
+                    model = RandomForestClassifier(
+                        n_jobs=n_jobs, random_state=self._random_state
+                    )
+                    model.fit(x_train, y_train)
+
+                    if output_data_directory is not None:
+                        models[experiment_name] = model
+
+                print(f"- training: {timer.dt:.01f} s ", end="")
+
+                with Timer() as timer:
+
+                    # Run the model report and save the it as a json file
+                    # Need the deepcopy here, still not entirely sure why
+                    report = deepcopy(Report())
+                    report.populate_performance(
+                        model, x_train, y_train, x_test, y_test
+                    )
+                    if compute_feature_importance:
+                        report.populate_feature_importance(
+                            model, x_test, y_test, n_jobs
+                        )
+
+                print(f"- report/save: {timer.dt:.01f} s")
+
+                self._reports[experiment_name] = report
+
+                if debug > 0:
+                    if ii >= debug:
+                        print("\tIn testing mode- ending early!", flush=True)
+                        break
 
         if output_data_directory is not None:
             Path(output_data_directory).mkdir(exist_ok=True, parents=True)
@@ -287,6 +315,7 @@ class Results(MSONable):
             report_path = root / f"{base_name}.json"
             with open(report_path, "w") as f:
                 json.dump(self.to_json(), f, indent=4)
+            print(f"\nReport saved to {report_path}")
 
             # Save the model itself
             model_path = root / f"{base_name}_models.pkl"
@@ -295,3 +324,4 @@ class Results(MSONable):
                 open(model_path, "wb"),
                 protocol=pickle.HIGHEST_PROTOCOL,
             )
+            print(f"Report saved to {model_path}")
