@@ -250,9 +250,7 @@ class Results(MSONable):
 
                 # Check that the occurence of the functional groups falls into
                 # the specified sweet spot
-                total_targets = len(binary_targets)
-                targets_on = binary_targets.sum()
-                ratio = targets_on / total_targets
+                ratio = binary_targets.sum() / len(binary_targets)
                 if not (
                     self._min_fg_occurrence < ratio < self._max_fg_occurrence
                 ):
@@ -263,18 +261,22 @@ class Results(MSONable):
                     )
                     continue
 
+                x_train = current_xanes_data[train_indexes, :]
+                x_test = current_xanes_data[test_indexes, :]
+                y_train = binary_targets[train_indexes]
+                y_test = binary_targets[test_indexes]
+
+                p_test = y_test.sum() / len(y_test)
+                p_train = y_train.sum() / len(y_train)
+                
                 print(
                     f"\t[{(ii+1):03}/{L:03}] {experiment_name} "
-                    f"occurence {ratio:.04f} ",
+                    f"occurence total={ratio:.04f} | train={p_train:.04f} | "
+                    f"test={p_test:.04f} ",
                     end="",
                 )
 
                 with Timer() as timer:
-
-                    x_train = current_xanes_data[train_indexes, :]
-                    x_test = current_xanes_data[test_indexes, :]
-                    y_train = binary_targets[train_indexes]
-                    y_test = binary_targets[test_indexes]
 
                     # Train the model
                     model = RandomForestClassifier(
