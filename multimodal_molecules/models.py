@@ -37,49 +37,6 @@ def get_all_combinations(n):
     return combos
 
 
-class Report(MSONable):
-    @property
-    def metrics(self):
-        return self._metrics
-
-    def __init__(self, metrics=dict()):
-        self._metrics = metrics
-
-    def populate_performance(self, model, x_train, y_train, x_test, y_test):
-        y_test_pred = model.predict(x_test)
-        y_train_pred = model.predict(x_train)
-
-        # Accuracies
-        self._metrics["test_accuracy"] = accuracy_score(y_test, y_test_pred)
-        self._metrics["train_accuracy"] = accuracy_score(y_train, y_train_pred)
-
-        # Balanced accuracies
-        self._metrics["test_balanced_accuracy"] = balanced_accuracy_score(
-            y_test, y_test_pred
-        )
-        self._metrics["train_balanced_accuracy"] = balanced_accuracy_score(
-            y_train, y_train_pred
-        )
-
-    def populate_feature_importance(self, model, x_test, y_test, n_jobs):
-
-        # Standard feature importance from the RF model
-        f_importance = np.array(
-            [tree.feature_importances_ for tree in model.estimators_]
-        )
-        self._metrics["feature_importance"] = {
-            "importances_mean": f_importance.mean(axis=0),
-            "importances_std": f_importance.std(axis=0),
-        }
-
-        # More accurate permutation feature importance
-        p_importance = permutation_importance(
-            model, x_test, y_test, n_jobs=n_jobs
-        )
-        p_importance.pop("importances")
-        self._metrics["permutation_feature_importance"] = p_importance
-
-
 class Results(MSONable):
     """A full report for all functional groups given a set of conditions."""
 
@@ -163,13 +120,13 @@ class Results(MSONable):
         index_data_name="221205_index.csv",
         offset_left=None,
         offset_right=None,
-        test_size=0.9,
+        test_size=0.6,
         random_state=42,
         min_fg_occurrence=0.02,
         max_fg_occurrence=0.98,
         data_size=None,
-        reports=dict(),
         data_loaded_from=None,
+        report=None,
     ):
         self._conditions = ",".join(sorted(conditions.split(",")))
         self._xanes_data_name = xanes_data_name
@@ -181,8 +138,9 @@ class Results(MSONable):
         self._min_fg_occurrence = min_fg_occurrence
         self._max_fg_occurrence = max_fg_occurrence
         self._data_size = data_size
-        self._reports = reports
         self._data_loaded_from = data_loaded_from
+        if report is None:
+            self._report = {}
 
     def run_experiments(
         self,
@@ -215,6 +173,10 @@ class Results(MSONable):
             or so per model even at full parallelization.
         """
 
+        print("\n")
+        print("--------------------------------------------------------------")
+        print("\n")
+
         data = self.get_data(input_data_directory)
         xanes_data, n_xanes_types = self._get_xanes_data(data)
         self._data_size = xanes_data.shape[0]
@@ -236,7 +198,9 @@ class Results(MSONable):
                 [conditions_list[jj] for jj in combo]
             )
             current_xanes_data = np.concatenate(
-                [xanes_data[:, ssl * ii:ssl * (ii + 1)] for ii in combo],
+                [
+                    xanes_data[:, ssl * ii : ssl * (ii + 1)] for ii in combo
+                ],  # noqa
                 axis=1,
             )
             print(
@@ -246,17 +210,17 @@ class Results(MSONable):
 
             for ii, (fg_name, binary_targets) in enumerate(data["FG"].items()):
 
-                experiment_name = f"{current_conditions_name}-{fg_name}"
+                ename = f"{current_conditions_name}-{fg_name}"
 
                 # Check that the occurence of the functional groups falls into
                 # the specified sweet spot
-                ratio = binary_targets.sum() / len(binary_targets)
+                p_total = binary_targets.sum() / len(binary_targets)
                 if not (
-                    self._min_fg_occurrence < ratio < self._max_fg_occurrence
+                    self._min_fg_occurrence < p_total < self._max_fg_occurrence
                 ):
                     print(
-                        f"\t[{(ii+1):03}/{L:03}] {experiment_name} occurence "
-                        f"{ratio:.04f} - continuing",
+                        f"\t[{(ii+1):03}/{L:03}] {ename} occurence "
+                        f"{p_total:.04f} - continuing",
                         flush=True,
                     )
                     continue
@@ -268,10 +232,10 @@ class Results(MSONable):
 
                 p_test = y_test.sum() / len(y_test)
                 p_train = y_train.sum() / len(y_train)
-                
+
                 print(
-                    f"\t[{(ii+1):03}/{L:03}] {experiment_name} "
-                    f"occurence total={ratio:.04f} | train={p_train:.04f} | "
+                    f"\t[{(ii+1):03}/{L:03}] {ename} "
+                    f"occ. total={p_total:.04f} | train={p_train:.04f} | "
                     f"test={p_test:.04f} ",
                     end="",
                 )
@@ -285,26 +249,64 @@ class Results(MSONable):
                     model.fit(x_train, y_train)
 
                     if output_data_directory is not None:
-                        models[experiment_name] = model
+                        models[ename] = deepcopy(model)
 
                 print(f"- training: {timer.dt:.01f} s ", end="")
 
                 with Timer() as timer:
 
-                    # Run the model report and save the it as a json file
-                    # Need the deepcopy here, still not entirely sure why
-                    report = deepcopy(Report())
-                    report.populate_performance(
-                        model, x_train, y_train, x_test, y_test
-                    )
+                    y_test_pred = model.predict(x_test)
+                    y_train_pred = model.predict(x_train)
+
+                    # Accuracies and other stuff
+                    self._report[ename] = {
+                        "p_total": p_total,
+                        "p_train": p_train,
+                        "p_test": p_test,
+                        "test_accuracy": accuracy_score(y_test, y_test_pred),
+                        "train_accuracy": accuracy_score(
+                            y_train, y_train_pred
+                        ),
+                        "test_balanced_accuracy": balanced_accuracy_score(
+                            y_test, y_test_pred
+                        ),
+                        "train_balanced_accuracy": balanced_accuracy_score(
+                            y_train, y_train_pred
+                        ),
+                    }
+
                     if compute_feature_importance:
-                        report.populate_feature_importance(
-                            model, x_test, y_test, n_jobs
+
+                        # Standard feature importance from the RF model
+                        # This is very fast
+                        f_importance = np.array(
+                            [
+                                tree.feature_importances_
+                                for tree in model.estimators_
+                            ]
                         )
 
-                print(f"- report/save: {timer.dt:.01f} s")
+                        # Append to the report
+                        self._report[ename]["feature_importance"] = {
+                            "importances_mean": f_importance.mean(axis=0),
+                            "importances_std": f_importance.std(axis=0),
+                        }
 
-                self._reports[experiment_name] = report
+                        # More accurate permutation feature importance
+                        p_importance = permutation_importance(
+                            model, x_test, y_test, n_jobs=n_jobs
+                        )
+                        p_importance.pop("importances")
+
+                        # Append to the report
+                        self._report[ename][
+                            "permutation_feature_importance"
+                        ] = {
+                            "importances_mean": p_importance.mean(axis=0),
+                            "importances_std": p_importance.std(axis=0),
+                        }
+
+                print(f"- report/save: {timer.dt:.01f} s")
 
                 if debug > 0:
                     if ii >= debug:
