@@ -141,6 +141,8 @@ class Results(MSONable):
         self._data_loaded_from = data_loaded_from
         if report is None:
             self._report = {}
+        else:
+            self._report = report
 
     def run_experiments(
         self,
