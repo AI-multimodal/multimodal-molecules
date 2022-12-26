@@ -49,8 +49,8 @@ class Results(MSONable):
         return klass
 
     @property
-    def reports(self):
-        return self._reports
+    def report(self):
+        return self._report
 
     @cached_property
     def models(self):
