@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import pickle
 from time import perf_counter
+from tqdm import tqdm
 from warnings import warn
 
 from monty.json import MSONable
@@ -331,3 +332,51 @@ class Results(MSONable):
                 protocol=pickle.HIGHEST_PROTOCOL,
             )
             print(f"Report saved to {model_path}")
+
+
+def validate(path, data_directory):
+    """A helper function for validating that the results of the models
+    (pickled) are the same as those which were stored in the reports.
+
+    Parameters
+    ----------
+    path : os.PathLike
+        Path to the json file which contains the model results.
+    input_data_directory : TYPE
+        Description
+    """
+
+    results = Results.from_file(path)
+    xanes_data_path = Path(data_directory) / results._xanes_data_name
+    index_data_path = Path(data_directory) / results._index_data_name
+    conditions = results._conditions
+    data = get_dataset(xanes_data_path, index_data_path, conditions)
+    _, test_idx = results.train_test_indexes
+    models = results.models
+
+    for key, model in tqdm(models.items()):
+
+        # Get the XANES keys
+        xk = [xx for xx in key.split("XANES")[:-1]]
+        xk = [xx.replace("-", "").replace("_", "") for xx in xk]
+        xk = [f"{xx}-XANES" for xx in xk]
+
+        # Get the input data
+        o1 = results._offset_left
+        o2 = results._offset_right
+        X = np.concatenate(
+            [data[key][:, o1:o2] for key in xk],
+            axis=1,
+        )
+
+        # Get the predictions and the ground truth for the model
+        preds = model.predict(X[test_idx, :])
+        fg = key.split("XANES-")[-1]
+        targets = data["FG"][fg][test_idx]
+        balanced_acc = balanced_accuracy_score(targets, preds)
+
+        # Get the previously cached results for the accuracy
+        previous_balanced_acc = results.report[key]["test_balanced_accuracy"]
+
+        # print(f"{previous_balanced_acc:.02f} | {balanced_acc:.02f}")
+        assert np.allclose(balanced_acc, previous_balanced_acc)
