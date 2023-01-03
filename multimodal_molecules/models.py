@@ -114,6 +114,40 @@ class Results(MSONable):
             axis=1,
         ), len(xanes_keys_avail)
 
+    def get_train_test_split(self, data):
+        """Gets the training and testing splits from provided data.
+
+        Parameters
+        ----------
+        data : dict
+            The data as loaded by the ``get_dataset`` function.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the trainind/testing data for this set of
+            results.
+        """
+
+        train_idx, test_idx = self.train_test_indexes
+
+        xanes_data = self._get_xanes_data(data)
+        xanes_data_train = xanes_data[train_idx, :]
+        xanes_data_test = xanes_data[test_idx, :]
+
+        functional_groups = data["FG"]
+        keys = functional_groups.keys()
+        train_fg = {key: functional_groups[key][train_idx] for key in keys}
+        test_fg = {key: functional_groups[key][test_idx] for key in keys}
+
+        return {
+            "x_train": xanes_data_train,
+            "x_test": xanes_data_test,
+            "y_train": train_fg,
+            "y_test": test_fg,
+            "unique_functional_groups": list(functional_groups),
+        }
+
     def __init__(
         self,
         conditions,
