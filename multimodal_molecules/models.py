@@ -4,6 +4,7 @@ from functools import cached_property, cache
 import json
 from pathlib import Path
 import pickle
+import random
 from time import perf_counter
 from tqdm import tqdm
 from warnings import warn
@@ -13,7 +14,6 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score, balanced_accuracy_score
-from sklearn.model_selection import train_test_split
 
 from multimodal_molecules.data import get_dataset
 
@@ -41,65 +41,6 @@ def get_all_combinations(n):
 
 def predict_rf(rf, X):
     return np.array([est.predict(X) for est in rf.estimators_]).T
-
-
-def get_split(
-    data,
-    functional_group="Alcohol",
-    which_XANES=["C-XANES"],
-    min_fg_occurrence=0.02,
-    max_fg_occurrence=0.98,
-    test_size=0.1,
-    random_state=42,
-):
-    """Summary
-
-    Parameters
-    ----------
-    data : dict
-        Data as produced by multimodal_molecules.data:get_dataset.
-    functional_group : str, optional
-        The functional group to use
-    which_XANES : list, optional
-        Description
-    min_fg_occurrence : float, optional
-        Description
-    max_fg_occurrence : float, optional
-        Description
-    test_size : float, optional
-        Description
-    random_state : int, optional
-        Description
-
-    Returns
-    -------
-    dict
-    """
-
-    loc = {key: value for key, value in locals() if key != "data"}
-
-    X = np.concatenate([data[xx] for xx in which_XANES], axis=1)
-    y = data["FG"][functional_group]
-
-    # Check that the occurence of the functional groups falls into the
-    # specified sweet spot
-    p_total = y.sum() / len(y)
-    if not min_fg_occurrence < p_total < max_fg_occurrence:
-        warn(f"p_total=={p_total:.02f} too small/large")
-        return None
-
-    # Get the split. Note that the training split here includes validation.
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.10, random_state=random_state
-    )
-
-    return {
-        "locals": loc,
-        "X_train": X_train,
-        "X_test": X_test,
-        "y_train": y_train,
-        "y_test": y_test,
-    }
 
 
 class Results(MSONable):
@@ -146,17 +87,27 @@ class Results(MSONable):
         return d
 
     @cached_property
-    def train_test_indexes(self):
+    def train_val_test_indexes(self):
         if self._data_size is None:
             raise RuntimeError("Run experiments first to calculate data size")
-        np.random.seed(self._random_state)
+
+        random.seed(self._random_state)
         N = self._data_size
-        size = int(self._test_size * N)
-        test_indexes = np.random.choice(N, size=size, replace=False).tolist()
-        assert len(test_indexes) == len(np.unique(test_indexes))
-        train_indexes = list(set(np.arange(N).tolist()) - set(test_indexes))
-        assert set(test_indexes).isdisjoint(set(train_indexes))
-        return sorted(train_indexes), sorted(test_indexes)
+        indexes = [ii for ii in range(N)]
+        random.shuffle(indexes)
+        test_size = int(self._test_size * N)
+        val_size = int(self._val_size * N)
+        t_plus_v = test_size + val_size
+
+        test_indexes = indexes[:test_size]
+        val_indexes = indexes[test_size:t_plus_v]
+        train_indexes = indexes[t_plus_v:]
+
+        assert set(train_indexes).isdisjoint(set(val_indexes))
+        assert set(train_indexes).isdisjoint(set(test_indexes))
+        assert set(test_indexes).isdisjoint(set(val_indexes))
+
+        return sorted(train_indexes), sorted(val_indexes), sorted(test_indexes)
 
     @cache
     def get_data(self, input_data_directory):
@@ -200,7 +151,7 @@ class Results(MSONable):
         assert set(xanes).issubset(set(conditions))
         indexes = [conditions.index(xx) for xx in xanes]
 
-        train_idx, test_idx = self.train_test_indexes
+        train_idx, val_idx, test_idx = self.train_val_test_indexes
 
         xanes_data, n_xanes_types = self._get_xanes_data(data)
         ssl = xanes_data.shape[1] // n_xanes_types  # Single spectrum length
@@ -213,17 +164,21 @@ class Results(MSONable):
         )
 
         xanes_data_train = current_xanes_data[train_idx, :]
+        xanes_data_val = current_xanes_data[val_idx, :]
         xanes_data_test = current_xanes_data[test_idx, :]
 
         functional_groups = data["FG"]
         keys = functional_groups.keys()
         train_fg = {key: functional_groups[key][train_idx] for key in keys}
+        val_fg = {key: functional_groups[key][val_idx] for key in keys}
         test_fg = {key: functional_groups[key][test_idx] for key in keys}
 
         return {
             "x_train": xanes_data_train,
+            "x_val": xanes_data_val,
             "x_test": xanes_data_test,
             "y_train": train_fg,
+            "y_val": val_fg,
             "y_test": test_fg,
             "unique_functional_groups": list(functional_groups),
         }
@@ -235,25 +190,31 @@ class Results(MSONable):
         index_data_name="221205_index.csv",
         offset_left=None,
         offset_right=None,
-        test_size=0.6,
+        val_size=0.2,
+        test_size=0.2,
         random_state=42,
         min_fg_occurrence=0.02,
         max_fg_occurrence=0.98,
         data_size=None,
         data_loaded_from=None,
         report=None,
+        specific_functional_groups=None,
+        rf_kwargs={},
     ):
         self._conditions = ",".join(sorted(conditions.split(",")))
         self._xanes_data_name = xanes_data_name
         self._index_data_name = index_data_name
         self._offset_left = offset_left
         self._offset_right = offset_right
+        self._val_size = val_size
         self._test_size = test_size
         self._random_state = random_state
         self._min_fg_occurrence = min_fg_occurrence
         self._max_fg_occurrence = max_fg_occurrence
         self._data_size = data_size
         self._data_loaded_from = data_loaded_from
+        self._rf_kwargs = rf_kwargs
+        self._specific_functional_groups = specific_functional_groups
         if report is None:
             self._report = {}
         else:
@@ -298,12 +259,17 @@ class Results(MSONable):
         xanes_data, n_xanes_types = self._get_xanes_data(data)
         self._data_size = xanes_data.shape[0]
         ssl = xanes_data.shape[1] // n_xanes_types  # Single spectrum length
-        train_indexes, test_indexes = self.train_test_indexes
+        train_indexes, val_indexes, test_indexes = self.train_val_test_indexes
 
         base_name = self._conditions.replace(",", "_")
 
+        if self._specific_functional_groups is None:
+            functional_groups = data["FG"]
+        else:
+            functional_groups = self._specific_functional_groups
+
         print(f"Total XANES data has shape {xanes_data.shape}")
-        L = len(data["FG"])
+        L = len(functional_groups)
         print(f"Total of {L} functional groups\n")
 
         xanes_index_combinations = get_all_combinations(n_xanes_types)
@@ -325,7 +291,9 @@ class Results(MSONable):
                 f"shape={current_xanes_data.shape}"
             )
 
-            for ii, (fg_name, binary_targets) in enumerate(data["FG"].items()):
+            for ii, (fg_name, binary_targets) in enumerate(
+                functional_groups.items()
+            ):
                 ename = f"{current_conditions_name}-{fg_name}"
 
                 # Check that the occurence of the functional groups falls into
@@ -342,11 +310,11 @@ class Results(MSONable):
                     continue
 
                 x_train = current_xanes_data[train_indexes, :]
-                x_test = current_xanes_data[test_indexes, :]
+                x_val = current_xanes_data[val_indexes, :]
                 y_train = binary_targets[train_indexes]
-                y_test = binary_targets[test_indexes]
+                y_val = binary_targets[val_indexes]
 
-                p_test = y_test.sum() / len(y_test)
+                p_test = y_val.sum() / len(y_val)
                 p_train = y_train.sum() / len(y_train)
 
                 print(
@@ -359,7 +327,9 @@ class Results(MSONable):
                 with Timer() as timer:
                     # Train the model
                     model = RandomForestClassifier(
-                        n_jobs=n_jobs, random_state=self._random_state
+                        n_jobs=n_jobs,
+                        random_state=self._random_state,
+                        **self._rf_kwargs,
                     )
                     model.fit(x_train, y_train)
 
@@ -369,7 +339,7 @@ class Results(MSONable):
                 print(f"- training: {timer.dt:.01f} s ", end="")
 
                 with Timer() as timer:
-                    y_test_pred = model.predict(x_test)
+                    y_val_pred = model.predict(x_val)
                     y_train_pred = model.predict(x_train)
 
                     # Accuracies and other stuff
@@ -377,12 +347,12 @@ class Results(MSONable):
                         "p_total": p_total,
                         "p_train": p_train,
                         "p_test": p_test,
-                        "test_accuracy": accuracy_score(y_test, y_test_pred),
+                        "test_accuracy": accuracy_score(y_val, y_val_pred),
                         "train_accuracy": accuracy_score(
                             y_train, y_train_pred
                         ),
                         "test_balanced_accuracy": balanced_accuracy_score(
-                            y_test, y_test_pred
+                            y_val, y_val_pred
                         ),
                         "train_balanced_accuracy": balanced_accuracy_score(
                             y_train, y_train_pred
@@ -407,7 +377,7 @@ class Results(MSONable):
 
                         # More accurate permutation feature importance
                         p_importance = permutation_importance(
-                            model, x_test, y_test, n_jobs=n_jobs
+                            model, x_val, y_val, n_jobs=n_jobs
                         )
                         p_importance.pop("importances")
 
@@ -461,7 +431,7 @@ def validate(path, data_directory):
     index_data_path = Path(data_directory) / results._index_data_name
     conditions = results._conditions
     data = get_dataset(xanes_data_path, index_data_path, conditions)
-    _, test_idx = results.train_test_indexes
+    _, val_idx, _ = results.train_val_test_indexes
     models = results.models
 
     for key, model in tqdm(models.items()):
@@ -479,9 +449,9 @@ def validate(path, data_directory):
         )
 
         # Get the predictions and the ground truth for the model
-        preds = model.predict(X[test_idx, :])
+        preds = model.predict(X[val_idx, :])
         fg = key.split("XANES-")[-1]
-        targets = data["FG"][fg][test_idx]
+        targets = data["FG"][fg][val_idx]
         balanced_acc = balanced_accuracy_score(targets, preds)
 
         # Get the previously cached results for the accuracy
