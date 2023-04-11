@@ -47,14 +47,28 @@ def get_dataset(xanes_path, index_path, conditions="C-XANES"):
         with SMILES strings as keys and arbitrary data as value, but this data
         must contain "X-XANES" keys, where X == C, N, O. Note that the pickle
         file itself must have the key "data", which will be what is accessed.
-    index_path : TYPE
-        Description
+    index_path : os.PathLike
+        Points to the csv index file generated in a previous step.
     conditions : str, optional
-        Description
+        A query that specifies which kinds of data to take in the subset. Some
+        examples of reasonable queries are:
+
+        .. code::
+
+            # All molecules containing at least one C and one O XANES
+            >> "C-XANES,O-XANES"
+
+            # All molecules containing at least one C XANEs but no nitrogen
+            >> "C-XANES,!N"
 
     Returns
     -------
     dict
+        A dictionary containing keys like ['C-XANES', 'O-XANES', 'grid', 'FG',
+        'index'], where the '*-XANES' keys are the XANES spectra, the 'grid' is
+        the energy grid, 'FG' is a dictionary containing the functional groups
+        that are present at least once in the data selected. 'index' is the
+        index file itself that is required for this function.
     """
 
     conditions = conditions.split(",")
