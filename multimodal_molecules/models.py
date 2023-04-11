@@ -13,6 +13,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score, balanced_accuracy_score
+from sklearn.model_selection import train_test_split
 
 from multimodal_molecules.data import get_dataset
 
@@ -40,6 +41,65 @@ def get_all_combinations(n):
 
 def predict_rf(rf, X):
     return np.array([est.predict(X) for est in rf.estimators_]).T
+
+
+def get_split(
+    data,
+    functional_group="Alcohol",
+    which_XANES=["C-XANES"],
+    min_fg_occurrence=0.02,
+    max_fg_occurrence=0.98,
+    test_size=0.1,
+    random_state=42,
+):
+    """Summary
+
+    Parameters
+    ----------
+    data : dict
+        Data as produced by multimodal_molecules.data:get_dataset.
+    functional_group : str, optional
+        The functional group to use
+    which_XANES : list, optional
+        Description
+    min_fg_occurrence : float, optional
+        Description
+    max_fg_occurrence : float, optional
+        Description
+    test_size : float, optional
+        Description
+    random_state : int, optional
+        Description
+
+    Returns
+    -------
+    dict
+    """
+
+    loc = {key: value for key, value in locals() if key != "data"}
+
+    X = np.concatenate([data[xx] for xx in which_XANES], axis=1)
+    y = data["FG"][functional_group]
+
+    # Check that the occurence of the functional groups falls into the
+    # specified sweet spot
+    p_total = y.sum() / len(y)
+    if not min_fg_occurrence < p_total < max_fg_occurrence:
+        warn(f"p_total=={p_total:.02f} too small/large")
+        return None
+
+    # Get the split. Note that the training split here includes validation.
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.10, random_state=random_state
+    )
+
+    return {
+        "locals": loc,
+        "X_train": X_train,
+        "X_test": X_test,
+        "y_train": y_train,
+        "y_test": y_test,
+    }
 
 
 class Results(MSONable):
@@ -266,7 +326,6 @@ class Results(MSONable):
             )
 
             for ii, (fg_name, binary_targets) in enumerate(data["FG"].items()):
-
                 ename = f"{current_conditions_name}-{fg_name}"
 
                 # Check that the occurence of the functional groups falls into
@@ -298,7 +357,6 @@ class Results(MSONable):
                 )
 
                 with Timer() as timer:
-
                     # Train the model
                     model = RandomForestClassifier(
                         n_jobs=n_jobs, random_state=self._random_state
@@ -311,7 +369,6 @@ class Results(MSONable):
                 print(f"- training: {timer.dt:.01f} s ", end="")
 
                 with Timer() as timer:
-
                     y_test_pred = model.predict(x_test)
                     y_train_pred = model.predict(x_train)
 
@@ -333,7 +390,6 @@ class Results(MSONable):
                     }
 
                     if compute_feature_importance:
-
                         # Standard feature importance from the RF model
                         # This is very fast
                         f_importance = np.array(
@@ -409,7 +465,6 @@ def validate(path, data_directory):
     models = results.models
 
     for key, model in tqdm(models.items()):
-
         # Get the XANES keys
         xk = [xx for xx in key.split("XANES")[:-1]]
         xk = [xx.replace("-", "").replace("_", "") for xx in xk]
