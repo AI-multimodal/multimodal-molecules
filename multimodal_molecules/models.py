@@ -38,6 +38,10 @@ def get_all_combinations(n):
     return combos
 
 
+def predict_rf(rf, X):
+    return np.array([est.predict(X) for est in rf.estimators_]).T
+
+
 class Results(MSONable):
     """A full report for all functional groups given a set of conditions."""
 
@@ -114,13 +118,15 @@ class Results(MSONable):
             axis=1,
         ), len(xanes_keys_avail)
 
-    def get_train_test_split(self, data):
+    def get_train_test_split(self, data, xanes="C,N,O"):
         """Gets the training and testing splits from provided data.
 
         Parameters
         ----------
         data : dict
             The data as loaded by the ``get_dataset`` function.
+        xanes : str, optional
+            Description
 
         Returns
         -------
@@ -129,11 +135,25 @@ class Results(MSONable):
             results.
         """
 
+        xanes = [f"{xx}-XANES" for xx in xanes.split(",")]
+        conditions = self._conditions.split(",")
+        assert set(xanes).issubset(set(conditions))
+        indexes = [conditions.index(xx) for xx in xanes]
+
         train_idx, test_idx = self.train_test_indexes
 
-        xanes_data = self._get_xanes_data(data)
-        xanes_data_train = xanes_data[train_idx, :]
-        xanes_data_test = xanes_data[test_idx, :]
+        xanes_data, n_xanes_types = self._get_xanes_data(data)
+        ssl = xanes_data.shape[1] // n_xanes_types  # Single spectrum length
+
+        current_xanes_data = np.concatenate(
+            [
+                xanes_data[:, ssl * ii : ssl * (ii + 1)] for ii in indexes
+            ],  # noqa
+            axis=1,
+        )
+
+        xanes_data_train = current_xanes_data[train_idx, :]
+        xanes_data_test = current_xanes_data[test_idx, :]
 
         functional_groups = data["FG"]
         keys = functional_groups.keys()
