@@ -458,7 +458,7 @@ class Results(MSONable):
             root = Path(output_data_directory)
             report_path = root / f"{base_name}.json"
             with open(report_path, "w") as f:
-                json.dump(self.to_json(), f, indent=4)
+                json.dump(self.to_json(), f, indent=4, sort_keys=True)
             print(f"Report saved to {report_path}")
 
             # Save the model itself
