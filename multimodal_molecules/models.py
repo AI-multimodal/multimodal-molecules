@@ -116,6 +116,7 @@ class Results(MSONable):
     def get_data(self, input_data_directory):
         xanes_path = Path(input_data_directory) / self._xanes_data_name
         index_path = Path(input_data_directory) / self._index_data_name
+        print(f"Loading data from {input_data_directory}")
         return get_dataset(xanes_path, index_path, self._conditions)
 
     def _get_xanes_data(self, data):
@@ -443,7 +444,8 @@ class Results(MSONable):
                 print(
                     f"\t          Class-balanced accuracies: "
                     f"train={train_acc:.05f} | "
-                    f"val={val_acc:.05f}\n"
+                    f"val={val_acc:.05f}\n",
+                    flush=True,
                 )
 
                 if debug > 0:
