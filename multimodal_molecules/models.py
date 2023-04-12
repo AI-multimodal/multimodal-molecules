@@ -221,7 +221,7 @@ class Results(MSONable):
         self._rf_kwargs = rf_kwargs
         self._specific_functional_groups = specific_functional_groups
 
-        if self._pca_components > 0 and self._nmf_components > 0:
+        if pca_components > 0 and nmf_components > 0:
             raise ValueError("Choose one PCA or NMF, not both")
 
         self._pca_components = pca_components
@@ -240,7 +240,7 @@ class Results(MSONable):
         output_data_directory=None,
         n_jobs=2,
         debug=-1,
-        compute_feature_importance=True,
+        compute_feature_importance=False,
     ):
         """Runs all experiments corresponding to the functional groups
         and the initially provided conditions.
@@ -262,7 +262,10 @@ class Results(MSONable):
         compute_feature_importance : bool, optional
             Computes the feature importances using the permutation method.
             Note that this is quite expensive. Likely to take aroudn 2 minutes
-            or so per model even at full parallelization.
+            or so per model even at full parallelization. This is probably best
+            set to False since run_experiments evaluates on the validation
+            data, and the permutation feature importance only needs to be
+            evaluated on the testing data.
         """
 
         print("--------------------------------------------------------------")
@@ -333,14 +336,14 @@ class Results(MSONable):
                 y_train = binary_targets[train_indexes]
                 y_val = binary_targets[val_indexes]
 
-                p_test = y_val.sum() / len(y_val)
+                p_val = y_val.sum() / len(y_val)
                 p_train = y_train.sum() / len(y_train)
 
                 print(f"\t[{(ii+1):03}/{L:03}] {ename} ", end="")
                 if jj == 0:
                     print(
                         f"occ. total={p_total:.04f} | train={p_train:.04f} | "
-                        f"val={p_test:.04f} ",
+                        f"val={p_val:.04f} ",
                         end="",
                     )
 
@@ -391,7 +394,7 @@ class Results(MSONable):
                     self._report[ename] = {
                         "p_total": p_total,
                         "p_train": p_train,
-                        "p_test": p_test,
+                        "p_val": p_val,
                         "val_accuracy": accuracy_score(y_val, y_val_pred),
                         "train_accuracy": accuracy_score(
                             y_train, y_train_pred

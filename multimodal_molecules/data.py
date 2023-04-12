@@ -1,20 +1,8 @@
 from functools import lru_cache
 
-import json
 import numpy as np
 import pandas as pd
 import pickle
-
-
-def save_json(d, path):
-    with open(path, "w") as outfile:
-        json.dump(d, outfile, indent=4, sort_keys=True)
-
-
-def read_json(path):
-    with open(path, "r") as infile:
-        dat = json.load(infile)
-    return dat
 
 
 def load_pickle(path):
@@ -24,11 +12,6 @@ def load_pickle(path):
 @lru_cache
 def get_pickle_data_and_cache(path):
     return load_pickle(path)
-
-
-@lru_cache
-def get_json_data_and_cache(path):
-    return read_json(path)
 
 
 @lru_cache
