@@ -11,9 +11,12 @@ from warnings import warn
 
 from monty.json import MSONable
 import numpy as np
+from sklearn.decomposition import PCA, NMF
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import accuracy_score, balanced_accuracy_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import StandardScaler
 
 from multimodal_molecules.data import get_dataset
 
@@ -199,6 +202,8 @@ class Results(MSONable):
         data_loaded_from=None,
         report=None,
         specific_functional_groups=None,
+        pca_components=0,
+        nmf_components=0,
         rf_kwargs={},
     ):
         self._conditions = ",".join(sorted(conditions.split(",")))
@@ -215,6 +220,15 @@ class Results(MSONable):
         self._data_loaded_from = data_loaded_from
         self._rf_kwargs = rf_kwargs
         self._specific_functional_groups = specific_functional_groups
+
+        if self._pca_components > 0 and self._nmf_components > 0:
+            raise ValueError("Choose one PCA or NMF, not both")
+
+        self._pca_components = pca_components
+        self._nmf_components = nmf_components
+
+        # There was a reason for doing this but I can't remember what it was
+        # I.e. I don't recommend just setting report={} as a kwarg default...
         if report is None:
             self._report = {}
         else:
@@ -251,9 +265,7 @@ class Results(MSONable):
             or so per model even at full parallelization.
         """
 
-        print("\n")
         print("--------------------------------------------------------------")
-        print("\n")
 
         data = self.get_data(input_data_directory)
         xanes_data, n_xanes_types = self._get_xanes_data(data)
@@ -266,7 +278,14 @@ class Results(MSONable):
         if self._specific_functional_groups is None:
             functional_groups = data["FG"]
         else:
-            functional_groups = self._specific_functional_groups
+            try:
+                functional_groups = {
+                    key: data["FG"][key]
+                    for key in self._specific_functional_groups
+                }
+            except KeyError as err:
+                print("Available functional groups:", list(data["FG"].keys()))
+                raise KeyError(err)
 
         print(f"Total XANES data has shape {xanes_data.shape}")
         L = len(functional_groups)
@@ -276,7 +295,7 @@ class Results(MSONable):
 
         conditions_list = base_name.split("_")
         models = dict()
-        for combo in xanes_index_combinations:
+        for jj, combo in enumerate(xanes_index_combinations):
             current_conditions_name = "_".join(
                 [conditions_list[jj] for jj in combo]
             )
@@ -317,20 +336,46 @@ class Results(MSONable):
                 p_test = y_val.sum() / len(y_val)
                 p_train = y_train.sum() / len(y_train)
 
-                print(
-                    f"\t[{(ii+1):03}/{L:03}] {ename} "
-                    f"occ. total={p_total:.04f} | train={p_train:.04f} | "
-                    f"test={p_test:.04f} ",
-                    end="",
-                )
+                print(f"\t[{(ii+1):03}/{L:03}] {ename} ", end="")
+                if jj == 0:
+                    print(
+                        f"occ. total={p_total:.04f} | train={p_train:.04f} | "
+                        f"val={p_test:.04f} ",
+                        end="",
+                    )
 
+                # Train the model
                 with Timer() as timer:
-                    # Train the model
+
                     model = RandomForestClassifier(
                         n_jobs=n_jobs,
                         random_state=self._random_state,
                         **self._rf_kwargs,
                     )
+
+                    if self._pca_components > 0:
+                        model = Pipeline(
+                            steps=[
+                                ("scaler", StandardScaler()),
+                                (
+                                    "pca",
+                                    PCA(self._pca_components * len(combo)),
+                                ),
+                                ("rf", model),
+                            ]
+                        )
+
+                    elif self._nmf_components > 0:
+                        model = Pipeline(
+                            steps=[
+                                (
+                                    "nmf",
+                                    NMF(self._nmf_components * len(combo)),
+                                ),
+                                ("rf", model),
+                            ]
+                        )
+
                     model.fit(x_train, y_train)
 
                     if output_data_directory is not None:
@@ -347,11 +392,11 @@ class Results(MSONable):
                         "p_total": p_total,
                         "p_train": p_train,
                         "p_test": p_test,
-                        "test_accuracy": accuracy_score(y_val, y_val_pred),
+                        "val_accuracy": accuracy_score(y_val, y_val_pred),
                         "train_accuracy": accuracy_score(
                             y_train, y_train_pred
                         ),
-                        "test_balanced_accuracy": balanced_accuracy_score(
+                        "val_balanced_accuracy": balanced_accuracy_score(
                             y_val, y_val_pred
                         ),
                         "train_balanced_accuracy": balanced_accuracy_score(
@@ -390,6 +435,13 @@ class Results(MSONable):
                         }
 
                 print(f"- report/save: {timer.dt:.01f} s")
+                val_acc = self._report[ename]["val_balanced_accuracy"]
+                train_acc = self._report[ename]["train_balanced_accuracy"]
+                print(
+                    f"\t          Class-balanced accuracies: "
+                    f"train={train_acc:.05f} | "
+                    f"val={val_acc:.05f}\n"
+                )
 
                 if debug > 0:
                     if ii >= debug:
@@ -402,7 +454,7 @@ class Results(MSONable):
             report_path = root / f"{base_name}.json"
             with open(report_path, "w") as f:
                 json.dump(self.to_json(), f, indent=4)
-            print(f"\nReport saved to {report_path}")
+            print(f"Report saved to {report_path}")
 
             # Save the model itself
             model_path = root / f"{base_name}_models.pkl"
@@ -455,7 +507,7 @@ def validate(path, data_directory):
         balanced_acc = balanced_accuracy_score(targets, preds)
 
         # Get the previously cached results for the accuracy
-        previous_balanced_acc = results.report[key]["test_balanced_accuracy"]
+        previous_balanced_acc = results.report[key]["val_balanced_accuracy"]
 
         # print(f"{previous_balanced_acc:.02f} | {balanced_acc:.02f}")
         assert np.allclose(balanced_acc, previous_balanced_acc)
