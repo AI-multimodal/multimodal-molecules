@@ -61,16 +61,8 @@ class Results(MSONable):
     def report(self):
         return self._report
 
-    @cached_property
-    def models(self):
-        """Returns a dictionary of the loaded models. Note this requires that
-        _data_loaded_from is set. This only happens when loading the class from
-        a json file.
-
-        Returns
-        -------
-        dict
-        """
+    @cache
+    def get_model(self, key):
 
         if self._data_loaded_from is None:
             warn(
@@ -79,15 +71,8 @@ class Results(MSONable):
             )
             return None
 
-        base_name = self._conditions.replace(",", "_")
-        path = Path(self._data_loaded_from) / f"{base_name}_models.pkl"
-        return pickle.load(open(path, "rb"))
-
-        d = dict()
-        for fname in Path(self._data_loaded_from).glob("*.pkl"):
-            key = str(fname).split(".pkl")[0].split("_")[1]
-            d[key] = pickle.load(open(fname, "rb"))
-        return d
+        model_path = Path(self._data_loaded_from) / f"{key}_model.pkl"
+        return pickle.load(open(model_path, "rb"))
 
     @cached_property
     def train_val_test_indexes(self):
@@ -269,6 +254,8 @@ class Results(MSONable):
             evaluated on the testing data.
         """
 
+        SPACING = "\t          "
+
         print("--------------------------------------------------------------")
 
         data = self.get_data(input_data_directory)
@@ -293,10 +280,11 @@ class Results(MSONable):
 
         print(f"Total XANES data has shape {xanes_data.shape}")
         L = len(functional_groups)
-        print(f"Total of {L} functional groups\n")
+        print(f"Total of {L} functional groups")
 
         xanes_index_combinations = get_all_combinations(n_xanes_types)
 
+        root = Path(output_data_directory)
         conditions_list = base_name.split("_")
         models = dict()
         for jj, combo in enumerate(xanes_index_combinations):
@@ -310,14 +298,21 @@ class Results(MSONable):
                 axis=1,
             )
             print(
-                f"Current XANES combo={combo} name={current_conditions_name} "
+                f"\nCurrent XANES combo={combo} name={current_conditions_name} "
                 f"shape={current_xanes_data.shape}"
             )
 
             for ii, (fg_name, binary_targets) in enumerate(
                 functional_groups.items()
             ):
+
                 ename = f"{current_conditions_name}-{fg_name}"
+                print(f"\n\t[{(ii+1):03}/{L:03}] {ename}")
+
+                model_path = root / f"{ename}_model.pkl"
+                if Path(model_path).exists():
+                    print(f"\tmodel={model_path} exists, continuing")
+                    continue
 
                 # Check that the occurence of the functional groups falls into
                 # the specified sweet spot
@@ -326,8 +321,7 @@ class Results(MSONable):
                     self._min_fg_occurrence < p_total < self._max_fg_occurrence
                 ):
                     print(
-                        f"\t[{(ii+1):03}/{L:03}] {ename} occurence "
-                        f"{p_total:.04f} - continuing",
+                        f"{SPACING}Occ. {p_total:.04f} - continuing\n",
                         flush=True,
                     )
                     continue
@@ -340,12 +334,11 @@ class Results(MSONable):
                 p_val = y_val.sum() / len(y_val)
                 p_train = y_train.sum() / len(y_train)
 
-                print(f"\t[{(ii+1):03}/{L:03}] {ename} ", end="")
                 if jj == 0:
                     print(
-                        f"occ. total={p_total:.04f} | train={p_train:.04f} | "
-                        f"val={p_val:.04f} ",
-                        end="",
+                        f"{SPACING}"
+                        f"Occ. total={p_total:.04f} | train={p_train:.04f} | "
+                        f"val={p_val:.04f} "
                     )
 
                 # Train the model
@@ -382,10 +375,7 @@ class Results(MSONable):
 
                     model.fit(x_train, y_train)
 
-                    if output_data_directory is not None:
-                        models[ename] = deepcopy(model)
-
-                print(f"- training: {timer.dt:.01f} s ", end="")
+                print(f"{SPACING}Training: {timer.dt:.01f} s")
 
                 with Timer() as timer:
                     y_val_pred = model.predict(x_val)
@@ -438,37 +428,38 @@ class Results(MSONable):
                             "importances_std": p_importance.std(axis=0),
                         }
 
-                print(f"- report/save: {timer.dt:.01f} s")
+                print(f"{SPACING}Report/save: {timer.dt:.01f} s")
                 val_acc = self._report[ename]["val_balanced_accuracy"]
                 train_acc = self._report[ename]["train_balanced_accuracy"]
                 print(
-                    f"\t          Class-balanced accuracies: "
+                    f"{SPACING}Class-balanced accuracies: "
                     f"train={train_acc:.05f} | "
-                    f"val={val_acc:.05f}\n",
+                    f"val={val_acc:.05f}",
                     flush=True,
                 )
 
+                if output_data_directory is not None:
+                    models[ename] = deepcopy(model)
+
+                    # Save the model itself
+                    pickle.dump(
+                        models[ename],
+                        open(model_path, "wb"),
+                        protocol=pickle.HIGHEST_PROTOCOL,
+                    )
+                    print(f"{SPACING}Model saved to {model_path}")
+
                 if debug > 0:
                     if ii >= debug:
-                        print("\tIn testing mode- ending early!", flush=True)
+                        print("In testing mode- ending early!", flush=True)
                         break
 
         if output_data_directory is not None:
             Path(output_data_directory).mkdir(exist_ok=True, parents=True)
-            root = Path(output_data_directory)
             report_path = root / f"{base_name}.json"
             with open(report_path, "w") as f:
                 json.dump(self.to_json(), f, indent=4, sort_keys=True)
-            print(f"Report saved to {report_path}")
-
-            # Save the model itself
-            model_path = root / f"{base_name}_models.pkl"
-            pickle.dump(
-                models,
-                open(model_path, "wb"),
-                protocol=pickle.HIGHEST_PROTOCOL,
-            )
-            print(f"Report saved to {model_path}")
+            print(f"\nReport saved to {report_path}")
 
 
 def validate(path, data_directory):
@@ -489,9 +480,11 @@ def validate(path, data_directory):
     conditions = results._conditions
     data = get_dataset(xanes_data_path, index_data_path, conditions)
     _, val_idx, _ = results.train_val_test_indexes
-    models = results.models
 
-    for key, model in tqdm(models.items()):
+    for key in tqdm(results.report.keys()):
+
+        model = results.get_model(key)
+
         # Get the XANES keys
         xk = [xx for xx in key.split("XANES")[:-1]]
         xk = [xx.replace("-", "").replace("_", "") for xx in xk]
