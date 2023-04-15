@@ -1,4 +1,3 @@
-from copy import deepcopy
 from itertools import combinations
 from functools import cached_property, cache
 import json
@@ -286,7 +285,6 @@ class Results(MSONable):
 
         root = Path(output_data_directory)
         conditions_list = base_name.split("_")
-        models = dict()
         for jj, combo in enumerate(xanes_index_combinations):
             current_conditions_name = "_".join(
                 [conditions_list[jj] for jj in combo]
@@ -439,11 +437,10 @@ class Results(MSONable):
                 )
 
                 if output_data_directory is not None:
-                    models[ename] = deepcopy(model)
 
                     # Save the model itself
                     pickle.dump(
-                        models[ename],
+                        model,
                         open(model_path, "wb"),
                         protocol=pickle.HIGHEST_PROTOCOL,
                     )
