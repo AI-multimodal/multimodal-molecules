@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import pickle
 from time import perf_counter
+from tqdm import tqdm
 from warnings import warn
 
 from monty.json import MSONable
@@ -51,6 +52,7 @@ class Results(MSONable):
 
     @cache
     def get_model(self, key):
+
         if self._data_loaded_from is None:
             warn(
                 "Use this after loading from json and saving the pickled "
@@ -139,7 +141,11 @@ class Results(MSONable):
 
         all_binary_targets = data.get_FG_data()
 
+        if output_data_directory is not None:
+            Path(output_data_directory).mkdir(exist_ok=True, parents=True)
+
         for jj, combo in enumerate(data.available_combinations):
+
             X_train = data.get_XANES_data(combo, index_subset="train")
             X_valid = data.get_XANES_data(combo, index_subset="valid")
 
@@ -150,6 +156,7 @@ class Results(MSONable):
             )
 
             for ii, fg_name in enumerate(functional_groups):
+
                 # Print some diagonstic information...
                 ename = f"{'_'.join(combo)}-{fg_name}"
                 print(f"\n\t[{(ii+1):03}/{len(functional_groups):03}] {ename}")
@@ -185,6 +192,7 @@ class Results(MSONable):
 
                 # Train the model
                 with Timer() as timer:
+
                     Lc = len(combo)
 
                     n_estimators = self._n_estimators_per_modality * Lc
@@ -306,9 +314,47 @@ class Results(MSONable):
                         break
 
         if output_data_directory is not None:
-            Path(output_data_directory).mkdir(exist_ok=True, parents=True)
-            base_name = data.conditions.replace(",", "_")
-            report_path = root / f"{base_name}.json"
+            report_path = root / "Report.json"
             with open(report_path, "w") as f:
                 json.dump(self.to_json(), f, indent=4, sort_keys=True)
             print(f"\nReport saved to {report_path}")
+            data_path = root / "Data.json"
+            with open(data_path, "w") as f:
+                json.dump(data.to_json(), f, indent=4, sort_keys=True)
+            print(f"Data saved to {data_path}")
+
+
+def validate(results, data):
+    """A helper function for validating that the results of the models
+    (pickled) are the same as those which were stored in the reports.
+
+    Parameters
+    ----------
+    path : os.PathLike
+        Path to the json file which contains the model results.
+    input_data_directory : TYPE
+        Description
+    """
+
+    for key in tqdm(results.report.keys()):
+
+        model = results.get_model(key)
+
+        # Get the XANES keys
+        xk = [xx for xx in key.split("XANES")[:-1]]
+        xk = [xx.replace("-", "").replace("_", "") for xx in xk]
+        xk = [f"{xx}-XANES" for xx in xk]
+
+        X = data.get_XANES_data(xk, index_subset="valid")
+
+        # Get the predictions and the ground truth for the model
+        preds = model.predict(X)
+        fg = key.split("XANES-")[-1]
+        y = data.get_FG_data(fg, index_subset="valid")
+        balanced_acc = balanced_accuracy_score(y, preds)
+
+        # Get the previously cached results for the accuracy
+        previous_balanced_acc = results.report[key]["val_balanced_accuracy"]
+
+        # print(f"{previous_balanced_acc:.02f} | {balanced_acc:.02f}")
+        assert np.allclose(balanced_acc, previous_balanced_acc)

@@ -3,6 +3,16 @@ import sys
 
 import json
 
+CONDITIONS = [
+    "C-XANES",
+    "N-XANES",
+    "O-XANES",
+    "C-XANES,N-XANES",
+    "C-XANES,O-XANES",
+    "C-XANES,N-XANES,O-XANES",
+]
+
+
 if __name__ == "__main__":
 
     with open("config.json", "r") as f:
@@ -13,6 +23,13 @@ if __name__ == "__main__":
 
     sys.path.append(config["module_path"])
     from multimodal_molecules.models import Results
+    from multimodal_molecules.data import XANESData
 
-    results = Results(**config["results_kwargs"])
-    results.run_experiments(**config["run_experiments_kwargs"])
+    for condition in CONDITIONS:
+
+        data = XANESData(conditions=condition, **config["XANESData_kwargs"])
+        results = Results(**config["Results_kwargs"])
+        results.run_experiments(
+            output_data_directory=condition.replace(",", "_"),
+            **config["run_experiments_kwargs"]
+        )

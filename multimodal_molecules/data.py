@@ -1,8 +1,10 @@
 from functools import cached_property, cache
 from itertools import combinations
+import json
 from pathlib import Path
 import random
 
+from monty.json import MSONable
 import numpy as np
 import pandas as pd
 import pickle
@@ -126,8 +128,15 @@ def get_all_combinations(elements):
     return combos
 
 
-class XANESData:
+class XANESData(MSONable):
     """Container for managing the data."""
+
+    @classmethod
+    def from_file(cls, path):
+        with open(path, "r") as f:
+            d = json.loads(json.load(f))
+        klass = cls.from_dict(d)
+        return klass
 
     @cached_property
     def data_dict(self):
@@ -237,8 +246,8 @@ class XANESData:
         indexes = [ii for ii in range(self.total_datapoints)]
         random.shuffle(indexes)
         test_size = int(self._test_size * self.total_datapoints)
-        val_size = int(self._val_size * self.total_datapoints)
-        t_plus_v = test_size + val_size
+        valid_size = int(self._valid_size * self.total_datapoints)
+        t_plus_v = test_size + valid_size
 
         test_indexes = indexes[:test_size]
         val_indexes = indexes[test_size:t_plus_v]
@@ -346,6 +355,14 @@ class XANESData:
     def index_path(self):
         return str(Path(self._data_directory) / "index.csv")
 
+    @property
+    def data_directory(self):
+        return self._data_directory
+
+    @data_directory.setter
+    def data_directory(self, x):
+        self._data_directory = x
+
     def __init__(
         self,
         data_directory,
@@ -354,7 +371,7 @@ class XANESData:
         offset_left=None,
         offset_right=None,
         test_size=0.1,
-        val_size=0.1,
+        valid_size=0.1,
     ):
         self._data_directory = data_directory
         self._conditions = ",".join(sorted(conditions.split(",")))
@@ -362,4 +379,4 @@ class XANESData:
         self._offset_left = offset_left
         self._offset_right = offset_right
         self._test_size = test_size
-        self._val_size = val_size
+        self._valid_size = valid_size
