@@ -9,6 +9,7 @@ CONDITIONS = [
     "O-XANES",
     "C-XANES,N-XANES",
     "C-XANES,O-XANES",
+    "N-XANES,O-XANES",
     "C-XANES,N-XANES,O-XANES",
 ]
 
@@ -30,6 +31,7 @@ if __name__ == "__main__":
         data = XANESData(conditions=condition, **config["XANESData_kwargs"])
         results = Results(**config["Results_kwargs"])
         results.run_experiments(
+            data,
             output_data_directory=condition.replace(",", "_"),
             **config["run_experiments_kwargs"]
         )
