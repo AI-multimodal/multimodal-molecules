@@ -6,3 +6,6 @@ try:
     del version
 except RuntimeError:
     __version__ = None
+
+
+DEFAULT_RANDOM_STATE = 1234
