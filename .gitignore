@@ -2,7 +2,7 @@
 *.tar.gz
 data/
 results/
-legacy/
+tables/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
