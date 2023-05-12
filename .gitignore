@@ -1,6 +1,7 @@
 .DS_Store
 *.tar.gz
 data/
+!README.md
 results/
 tables/
 
