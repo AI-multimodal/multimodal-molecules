@@ -1,0 +1,8 @@
+pandas
+numpy
+rdkit
+scikit-learn
+matplotlib
+jupyter-lab
+scipy
+crescendo
