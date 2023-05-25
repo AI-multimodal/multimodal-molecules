@@ -44,8 +44,8 @@ def construct_standard_data_splits():
         d.mkdir(exist_ok=True, parents=True)
 
         data = get_dataset(
-            xanes_path="data/221205/xanes.pkl",
-            index_path="data/221205/index.csv",
+            xanes_path=Path("data") / "22-12-05-data" / "xanes.pkl",
+            index_path=Path("data") / "22-12-05-data" / "index.csv",
             conditions=condition,
         )
         X = concatenate(data)
@@ -140,8 +140,8 @@ def construct_cutoff_data_splits(cutoff=8):
         d.mkdir(exist_ok=True, parents=True)
 
         data = get_dataset(
-            xanes_path="data/22-12-05-data/xanes.pkl",
-            index_path="data/22-12-05-data/index.csv",
+            xanes_path=Path("data") / "22-12-05-data" / "xanes.pkl",
+            index_path=Path("data") / "22-12-05-data" / "index.csv",
             conditions=condition,
         )
         data["index"]["num_atoms"] = data["index"]["SMILES"].apply(
