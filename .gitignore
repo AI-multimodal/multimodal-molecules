@@ -4,6 +4,8 @@ data/
 !README.md
 results/
 tables/
+legacy/
+figures/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
