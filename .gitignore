@@ -8,6 +8,7 @@ tables/
 legacy/
 figures/
 NSLS-II-ISS-xview-main/
+experiment/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
