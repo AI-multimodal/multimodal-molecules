@@ -3,6 +3,11 @@ numpy
 rdkit
 scikit-learn
 matplotlib
-jupyter-lab
+jupyterlab
 scipy
-crescendo
+safetensors
+git+https://github.com/matthewcarbone/Crescendo.git@6fcfcb7e44e0c96ab9dd23a4f90755dcc7eb2ac7
+pubchempy
+PyAstronomy
+PyQt5
+xraylarch
